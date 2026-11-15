@@ -41,6 +41,11 @@ function AHU.Print(msg)
 	DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99AHUpgradeCheck|r: " .. msg)
 end
 
+-- Tracked from the AUCTION_HOUSE_SHOW/CLOSED events themselves rather than
+-- checking a guessed Blizzard frame global (e.g. AuctionFrame) - that global's
+-- name/existence isn't reliable across client forks, but these events are.
+AHU.auctionHouseOpen = false
+
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("AUCTION_HOUSE_SHOW")
@@ -52,8 +57,10 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
 				AHU.Print("GearQuestForever was not found or didn't load first. Upgrade scoring needs it.")
 			end
 		elseif event == "AUCTION_HOUSE_SHOW" then
+			AHU.auctionHouseOpen = true
 			AHU.UI:OnAuctionHouseShown()
 		elseif event == "AUCTION_HOUSE_CLOSED" then
+			AHU.auctionHouseOpen = false
 			AHU.UI:OnAuctionHouseClosed()
 		end
 	end)

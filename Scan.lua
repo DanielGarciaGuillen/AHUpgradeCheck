@@ -12,6 +12,17 @@ Scan.eventFrame = eventFrame
 -- Baseline = the weaker of the two equipped items for Finger/Trinket (mirrors
 -- GQ.Compare:GetEquippedItemLevel's own "compare against the weaker slot" rule),
 -- otherwise just the one equipped item's score.
+-- Scoring can fail for a slot/class/spec GearQuestForever's data isn't
+-- complete for yet (e.g. a class whose module isn't fully built out) - treat
+-- that as "no score" rather than letting it take down the whole scan.
+local function SafeScore(itemLink, slotName)
+	local ok, score = pcall(GearQuest.Compare.ScoreItemLinkStats, GearQuest.Compare, itemLink, slotName)
+	if not ok then
+		return 0
+	end
+	return score or 0
+end
+
 function Scan:ComputeBaselines()
 	self.baselines = {}
 	for _, slotName in ipairs(AHU.SLOTS) do
@@ -19,7 +30,7 @@ function Scan:ComputeBaselines()
 		local bestScore
 		for _, invSlot in ipairs(invSlots) do
 			local link = GetInventoryItemLink("player", invSlot)
-			local score = link and GearQuest.Compare:ScoreItemLinkStats(link, slotName) or 0
+			local score = link and SafeScore(link, slotName) or 0
 			if not bestScore or score < bestScore then
 				bestScore = score
 			end
@@ -36,7 +47,7 @@ function Scan:Start()
 		AHU.Print("GearQuestForever is required but not loaded.")
 		return
 	end
-	if not AuctionFrame or not AuctionFrame:IsShown() then
+	if not AHU.auctionHouseOpen then
 		AHU.Print("Open the Auction House first.")
 		return
 	end
@@ -131,7 +142,7 @@ function Scan:ScoreCandidate(itemId, itemLink, buyoutPrice, itemEquipLoc)
 	end
 
 	local baselineScore = self.baselines[slotName]
-	local score = GearQuest.Compare:ScoreItemLinkStats(itemLink, slotName)
+	local score = SafeScore(itemLink, slotName)
 
 	if score <= 0 then
 		local attempts = (self.rescoreAttempts[itemLink] or 0) + 1
@@ -169,19 +180,24 @@ function Scan:Finish()
 	AHU.UI:SetStatus(("Scan complete - %d candidate upgrade(s) found."):format(#self.results))
 end
 
--- Re-runs a targeted browse search for this item so it's selectable on the
--- default Browse tab, where you confirm the actual bid/buyout yourself.
+-- Re-runs a targeted browse search for this item so it shows up in the
+-- Auction House's own list, where you confirm the actual bid/buyout yourself.
+-- Deliberately doesn't touch specific Blizzard AH UI widgets (tab buttons,
+-- the search box) by name - those globals aren't confirmed to exist under
+-- the names classic/wrath clients use on this server, so only the data API
+-- call (QueryAuctionItems) is used; the rest is left to you, by hand, on
+-- whatever the Browse tab is actually called here.
 function Scan:GoToAuction(entry)
-	if not AuctionFrame or not AuctionFrame:IsShown() then
+	if not AHU.auctionHouseOpen then
 		AHU.Print("Open the Auction House first.")
 		return
 	end
 
-	AuctionFrameTab_OnClick(AuctionFrameTab1)
 	local itemName = GetItemInfo(entry.itemId)
-	if itemName and BrowseName then
-		BrowseName:SetText(itemName)
+	local ok, err = pcall(QueryAuctionItems, itemName or "", nil, nil, nil, nil, nil, 0, false, nil)
+	if not ok then
+		AHU.Print("Couldn't search for it: " .. tostring(err))
+		return
 	end
-	QueryAuctionItems(itemName or "", nil, nil, nil, nil, nil, 0, false, nil)
-	AHU.Print(('Searching Browse for "%s" - use Bid/Buyout there to finish the purchase.'):format(itemName or "item"))
+	AHU.Print(('Searched the Auction House for "%s" - open your Browse tab to Bid/Buyout it.'):format(itemName or "item"))
 end
