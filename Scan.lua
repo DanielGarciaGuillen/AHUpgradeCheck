@@ -93,7 +93,7 @@ function Scan:StartInner()
 	self.pending = {}
 	self.rescoreAttempts = {}
 	self.seenItemKeys = {}
-	self.counts = { considered = 0, pending = 0, scored = 0, skippedNoSlot = 0 }
+	self.counts = { considered = 0, pending = 0, scored = 0, skippedNoSlot = 0, skippedNotEquippable = 0 }
 	self:ComputeBaselines()
 
 	local baselineParts = {}
@@ -272,6 +272,17 @@ function Scan:ScoreCandidate(itemId, itemLink, buyoutPrice, itemEquipLoc, itemKe
 		return -- not an equippable gear slot we track (e.g. tabard, shirt, consumable)
 	end
 
+	-- IsEquippableItem accounts for class/level/armor-proficiency restrictions
+	-- (plate/mail/leather/cloth) the way the client itself enforces them, so a
+	-- shaman never gets shown plate, a rogue never gets shown a 2h mace it
+	-- can't use, etc. Only skip on a definite false - leave it in on nil/error
+	-- rather than risk hiding valid upgrades over an API quirk.
+	local ok, equippable = pcall(IsEquippableItem, itemLink)
+	if ok and equippable == false then
+		self.counts.skippedNotEquippable = self.counts.skippedNotEquippable + 1
+		return
+	end
+
 	local baselineScore = self.baselines[slotName]
 	local score = SafeScore(itemLink, slotName)
 
@@ -317,8 +328,9 @@ function Scan:Finish()
 	eventFrame:UnregisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
 	eventFrame:UnregisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
 	AHU.Debug:Log(
-		"Scan finished: considered=%d pending=%d scored=%d skippedNoSlot=%d results=%d",
-		self.counts.considered, self.counts.pending, self.counts.scored, self.counts.skippedNoSlot, #self.results
+		"Scan finished: considered=%d pending=%d scored=%d skippedNoSlot=%d skippedNotEquippable=%d results=%d",
+		self.counts.considered, self.counts.pending, self.counts.scored, self.counts.skippedNoSlot,
+		self.counts.skippedNotEquippable, #self.results
 	)
 	AHU.UI:SetStatus(("Scan complete - %d candidate upgrade(s) found."):format(#self.results))
 end
