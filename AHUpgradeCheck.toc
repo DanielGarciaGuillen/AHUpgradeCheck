@@ -2,7 +2,7 @@
 ## Title: AH Upgrade Check
 ## Notes: Scans the Auction House for gear upgrades over what you have equipped, scored via GearQuest Forever.
 ## Author: Daniel Garcia
-## Version: 1.0.0
+## Version: 0.1.0-beta
 ## RequiredDeps: GearQuestForever
 ## SavedVariables: AHUpgradeCheckDB
 

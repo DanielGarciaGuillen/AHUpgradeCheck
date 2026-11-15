@@ -46,14 +46,19 @@ eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("AUCTION_HOUSE_SHOW")
 eventFrame:RegisterEvent("AUCTION_HOUSE_CLOSED")
 eventFrame:SetScript("OnEvent", function(_, event, arg1)
-	if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
-		if not GearQuest or not GearQuest.Compare or not GearQuest.Data then
-			AHU.Print("GearQuestForever was not found or didn't load first. Upgrade scoring needs it.")
+	local ok, err = pcall(function()
+		if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
+			if not GearQuest or not GearQuest.Compare or not GearQuest.Data then
+				AHU.Print("GearQuestForever was not found or didn't load first. Upgrade scoring needs it.")
+			end
+		elseif event == "AUCTION_HOUSE_SHOW" then
+			AHU.UI:OnAuctionHouseShown()
+		elseif event == "AUCTION_HOUSE_CLOSED" then
+			AHU.UI:OnAuctionHouseClosed()
 		end
-	elseif event == "AUCTION_HOUSE_SHOW" then
-		AHU.UI:OnAuctionHouseShown()
-	elseif event == "AUCTION_HOUSE_CLOSED" then
-		AHU.UI:OnAuctionHouseClosed()
+	end)
+	if not ok then
+		AHU.Print("Error handling " .. event .. ": " .. tostring(err))
 	end
 end)
 

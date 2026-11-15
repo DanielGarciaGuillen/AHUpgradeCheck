@@ -59,10 +59,15 @@ function Scan:Start()
 end
 
 function Scan:OnEvent(event, arg1)
-	if event == "AUCTION_ITEMS_UPDATE" then
-		self:ProcessPage()
-	elseif event == "GET_ITEM_INFO_RECEIVED" then
-		self:RetryPending(arg1)
+	local ok, err = pcall(function()
+		if event == "AUCTION_ITEMS_UPDATE" then
+			self:ProcessPage()
+		elseif event == "GET_ITEM_INFO_RECEIVED" then
+			self:RetryPending(arg1)
+		end
+	end)
+	if not ok then
+		AHU.Print("Error handling " .. event .. ": " .. tostring(err))
 	end
 end
 

@@ -77,14 +77,18 @@ function UI:Create()
 	frame = CreateFrame("Frame", "AHUpgradeCheckFrame", UIParent)
 	frame:SetSize(480, 420)
 	frame:SetPoint("CENTER")
-	frame:SetBackdrop({
-		bgFile = "Interface/DialogFrame/UI-DialogBox-Background",
-		edgeFile = "Interface/DialogFrame/UI-DialogBox-Border",
-		tile = true,
-		tileSize = 32,
-		edgeSize = 32,
-		insets = { left = 11, right = 12, top = 12, bottom = 11 },
-	})
+
+	-- Plain texture background instead of SetBackdrop: SetBackdrop needs
+	-- BackdropTemplateMixin on newer clients and isn't guaranteed here, so
+	-- avoid it entirely rather than risk Create() erroring out before Show().
+	local bg = frame:CreateTexture(nil, "BACKGROUND")
+	bg:SetAllPoints(frame)
+	if bg.SetColorTexture then
+		bg:SetColorTexture(0, 0, 0, 0.85)
+	else
+		bg:SetTexture(0, 0, 0, 0.85)
+	end
+
 	frame:SetMovable(true)
 	frame:EnableMouse(true)
 	frame:RegisterForDrag("LeftButton")
