@@ -40,6 +40,26 @@ function Debug:DumpGlobals()
 	end
 end
 
+local MODERN_API_FUNCS = {
+	"SendBrowseQuery", "GetBrowseResults", "HasFullBrowseResults",
+	"SendSearchQuery", "GetItemSearchResultInfo", "GetCommoditySearchResultInfo",
+}
+local LEGACY_API_FUNCS = {
+	"QueryAuctionItems", "GetNumAuctionItems", "GetAuctionItemInfo", "GetAuctionItemLink",
+}
+
+function Debug:DumpAPI()
+	self:Log("C_AuctionHouse = %s", type(C_AuctionHouse))
+	if type(C_AuctionHouse) == "table" then
+		for _, name in ipairs(MODERN_API_FUNCS) do
+			self:Log("C_AuctionHouse.%s = %s", name, type(C_AuctionHouse[name]))
+		end
+	end
+	for _, name in ipairs(LEGACY_API_FUNCS) do
+		self:Log("global %s = %s", name, type(_G[name]))
+	end
+end
+
 local exportFrame
 
 function Debug:ShowExport()

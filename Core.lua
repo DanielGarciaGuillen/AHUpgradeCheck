@@ -61,6 +61,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
 		elseif event == "AUCTION_HOUSE_SHOW" then
 			AHU.Debug:Log("AUCTION_HOUSE_SHOW")
 			AHU.Debug:DumpGlobals()
+			AHU.Debug:DumpAPI()
 			AHU.auctionHouseOpen = true
 			AHU.UI:OnAuctionHouseShown()
 		elseif event == "AUCTION_HOUSE_CLOSED" then
