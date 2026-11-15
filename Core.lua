@@ -53,23 +53,36 @@ eventFrame:RegisterEvent("AUCTION_HOUSE_CLOSED")
 eventFrame:SetScript("OnEvent", function(_, event, arg1)
 	local ok, err = pcall(function()
 		if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
-			if not GearQuest or not GearQuest.Compare or not GearQuest.Data then
+			local hasGearQuest = GearQuest and GearQuest.Compare and GearQuest.Data
+			AHU.Debug:Log("ADDON_LOADED - GearQuest present: %s", tostring(hasGearQuest))
+			if not hasGearQuest then
 				AHU.Print("GearQuestForever was not found or didn't load first. Upgrade scoring needs it.")
 			end
 		elseif event == "AUCTION_HOUSE_SHOW" then
+			AHU.Debug:Log("AUCTION_HOUSE_SHOW")
+			AHU.Debug:DumpGlobals()
 			AHU.auctionHouseOpen = true
 			AHU.UI:OnAuctionHouseShown()
 		elseif event == "AUCTION_HOUSE_CLOSED" then
+			AHU.Debug:Log("AUCTION_HOUSE_CLOSED")
 			AHU.auctionHouseOpen = false
 			AHU.UI:OnAuctionHouseClosed()
 		end
 	end)
 	if not ok then
+		AHU.Debug:Log("ERROR in %s handler: %s", event, tostring(err))
 		AHU.Print("Error handling " .. event .. ": " .. tostring(err))
 	end
 end)
 
 SLASH_AHUPGRADECHECK1 = "/ahup"
-SlashCmdList["AHUPGRADECHECK"] = function()
-	AHU.UI:Toggle()
+SlashCmdList["AHUPGRADECHECK"] = function(msg)
+	local cmd = strtrim((msg or ""):lower())
+	if cmd == "debug" or cmd == "log" then
+		AHU.Debug:ShowExport()
+	elseif cmd == "cleardebug" or cmd == "clearlog" then
+		AHU.Debug:Clear()
+	else
+		AHU.UI:Toggle()
+	end
 end

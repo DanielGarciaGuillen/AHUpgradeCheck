@@ -127,6 +127,7 @@ function UI:Create()
 		else
 			row:SetPoint("TOPLEFT", frame.rows[i - 1], "BOTTOMLEFT", 0, -2)
 		end
+		row:Hide() -- stays hidden until RefreshRows has an entry for it
 		frame.rows[i] = row
 	end
 

@@ -40,6 +40,7 @@ function Scan:ComputeBaselines()
 end
 
 function Scan:Start()
+	AHU.Debug:Log("Scan:Start called (active=%s, auctionHouseOpen=%s)", tostring(self.active), tostring(AHU.auctionHouseOpen))
 	if self.active then
 		return
 	end
@@ -57,7 +58,15 @@ function Scan:Start()
 	self.results = {}
 	self.pending = {}
 	self.rescoreAttempts = {}
+	self.counts = { considered = 0, pending = 0, scored = 0, skippedNoSlot = 0 }
 	self:ComputeBaselines()
+	AHU.Debug:Log("Baselines: %s", table.concat((function()
+		local parts = {}
+		for slot, score in pairs(self.baselines) do
+			table.insert(parts, slot .. "=" .. tostring(score))
+		end
+		return parts
+	end)(), ", "))
 
 	eventFrame:RegisterEvent("AUCTION_ITEMS_UPDATE")
 	eventFrame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
@@ -66,7 +75,13 @@ function Scan:Start()
 	end)
 
 	AHU.UI:SetStatus("Scanning page 1...")
-	QueryAuctionItems("", nil, nil, nil, nil, nil, self.page, false, nil)
+
+	local ok, err = pcall(QueryAuctionItems, "", nil, nil, nil, nil, nil, self.page, false, nil)
+	AHU.Debug:Log("QueryAuctionItems page 0 issued: ok=%s err=%s", tostring(ok), tostring(err))
+	if not ok then
+		self.active = false
+		AHU.Print("Couldn't query the Auction House: " .. tostring(err))
+	end
 end
 
 function Scan:OnEvent(event, arg1)
@@ -88,6 +103,7 @@ function Scan:ProcessPage()
 	end
 
 	local numItems, totalAuctions = GetNumAuctionItems("list")
+	AHU.Debug:Log("AUCTION_ITEMS_UPDATE: page=%d numItems=%s totalAuctions=%s", self.page, tostring(numItems), tostring(totalAuctions))
 	for i = 1, numItems do
 		local _, _, _, _, _, _, _, _, _, buyoutPrice, _, _, _, _, _, _, itemId =
 			GetAuctionItemInfo("list", i)
@@ -110,8 +126,10 @@ function Scan:ProcessPage()
 end
 
 function Scan:ConsiderItem(itemId, itemLink, buyoutPrice)
+	self.counts.considered = self.counts.considered + 1
 	local _, _, _, _, _, _, _, _, itemEquipLoc = GetItemInfo(itemId)
 	if itemEquipLoc == nil then
+		self.counts.pending = self.counts.pending + 1
 		self.pending[itemId] = self.pending[itemId] or {}
 		table.insert(self.pending[itemId], { itemLink = itemLink, buyoutPrice = buyoutPrice })
 		return
@@ -138,6 +156,7 @@ end
 function Scan:ScoreCandidate(itemId, itemLink, buyoutPrice, itemEquipLoc)
 	local slotName = AHU.EQUIP_LOC_TO_SLOT[itemEquipLoc]
 	if not slotName then
+		self.counts.skippedNoSlot = self.counts.skippedNoSlot + 1
 		return -- not an equippable gear slot we track (e.g. tabard, shirt, consumable)
 	end
 
@@ -162,6 +181,7 @@ function Scan:ScoreCandidate(itemId, itemLink, buyoutPrice, itemEquipLoc)
 		pct = math.huge -- nothing equipped in this slot (or it scored 0) - treat any find as new gear
 	end
 
+	self.counts.scored = self.counts.scored + 1
 	table.insert(self.results, {
 		itemLink = itemLink,
 		itemId = itemId,
@@ -177,6 +197,10 @@ end
 function Scan:Finish()
 	self.active = false
 	eventFrame:UnregisterEvent("AUCTION_ITEMS_UPDATE")
+	AHU.Debug:Log(
+		"Scan finished: considered=%d pending=%d scored=%d skippedNoSlot=%d results=%d",
+		self.counts.considered, self.counts.pending, self.counts.scored, self.counts.skippedNoSlot, #self.results
+	)
 	AHU.UI:SetStatus(("Scan complete - %d candidate upgrade(s) found."):format(#self.results))
 end
 
@@ -188,14 +212,17 @@ end
 -- call (QueryAuctionItems) is used; the rest is left to you, by hand, on
 -- whatever the Browse tab is actually called here.
 function Scan:GoToAuction(entry)
+	local itemName = GetItemInfo(entry.itemId)
+	AHU.Debug:Log("GoToAuction clicked: item=%s auctionHouseOpen=%s", tostring(itemName or entry.itemLink), tostring(AHU.auctionHouseOpen))
+
 	if not AHU.auctionHouseOpen then
 		AHU.Print("Open the Auction House first.")
 		return
 	end
 
-	local itemName = GetItemInfo(entry.itemId)
 	local ok, err = pcall(QueryAuctionItems, itemName or "", nil, nil, nil, nil, nil, 0, false, nil)
 	if not ok then
+		AHU.Debug:Log("GoToAuction QueryAuctionItems failed: %s", tostring(err))
 		AHU.Print("Couldn't search for it: " .. tostring(err))
 		return
 	end

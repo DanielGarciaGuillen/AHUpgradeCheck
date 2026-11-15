@@ -6,6 +6,7 @@
 ## RequiredDeps: GearQuestForever
 ## SavedVariables: AHUpgradeCheckDB
 
+Debug.lua
 Core.lua
 Scan.lua
 UI.lua
