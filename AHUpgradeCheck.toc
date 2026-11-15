@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: AH Upgrade Check
+## Notes: Scans the Auction House for gear upgrades over what you have equipped, scored via GearQuest Forever.
+## Author: Daniel Garcia
+## Version: 1.0.0
+## RequiredDeps: GearQuestForever
+## SavedVariables: AHUpgradeCheckDB
+
+Core.lua
+Scan.lua
+UI.lua
