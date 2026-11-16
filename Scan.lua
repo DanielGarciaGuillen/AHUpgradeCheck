@@ -16,14 +16,19 @@ local FINISH_AFTER_QUIET_SECONDS = 4
 local ITEM_CLASS_FILTERS = {}
 
 -- filters "requires at least one filter in order to show something" per the
--- same docs - an empty table (what we had) was likely why results looked
--- unfiltered junk. UsableOnly is Enum.AuctionHouseFilter.UsableOnly (=2 on
--- this client, confirmed via /ahup debug), which also doubles up nicely with
--- our own IsEquippableItem/level checks.
+-- docs, so this can't just be empty. UsableOnly turned out to return zero
+-- results even when real matching auctions existed on the AH - on a private
+-- server reimplementing this API, that filter's server-side logic may just
+-- be broken or unimplemented, even though the client-side enum exists. Using
+-- None (0) instead: satisfies "at least one filter" without excluding
+-- anything server-side, and relies on our own already-verified
+-- IsEquippableItem/level checks for usability instead.
 local function BrowseFilters()
 	local filters = {}
-	if Enum.AuctionHouseFilter and Enum.AuctionHouseFilter.UsableOnly then
-		table.insert(filters, Enum.AuctionHouseFilter.UsableOnly)
+	if Enum.AuctionHouseFilter then
+		table.insert(filters, Enum.AuctionHouseFilter.None or 0)
+	else
+		table.insert(filters, 0)
 	end
 	return filters
 end
