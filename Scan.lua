@@ -6,6 +6,16 @@ local Scan = AHU.Scan
 local MAX_RESCORE_ATTEMPTS = 3
 local FINISH_AFTER_QUIET_SECONDS = 4
 
+-- TEMPORARY test-scope narrowing: only two-handed axes and maces (what a
+-- Shaman can actually wield two-handed), to nail one specific use case while
+-- debugging rather than scanning the whole AH. itemClassFilters shape is
+-- Blizzard's own AuctionHouseBrowseQuery structure: {classID, subClassFilters}.
+-- classID 2 = Weapon; subclass 1 = Two-Handed Axes, 5 = Two-Handed Maces.
+-- To go back to scanning everything, set this to {} (empty table).
+local ITEM_CLASS_FILTERS = {
+	{ classID = 2, subClassFilters = { 1, 5 } },
+}
+
 local eventFrame = CreateFrame("Frame")
 Scan.eventFrame = eventFrame
 
@@ -119,7 +129,7 @@ function Scan:StartModern()
 	eventFrame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 
 	AHU.UI:SetStatus("Scanning (browse query sent)...")
-	local query = { searchString = "", sorts = {}, filters = {}, itemClassFilters = {} }
+	local query = { searchString = "", sorts = {}, filters = {}, itemClassFilters = ITEM_CLASS_FILTERS }
 	local ok, err = pcall(C_AuctionHouse.SendBrowseQuery, query)
 	AHU.Debug:Log("C_AuctionHouse.SendBrowseQuery issued: ok=%s err=%s", tostring(ok), tostring(err))
 	if not ok then

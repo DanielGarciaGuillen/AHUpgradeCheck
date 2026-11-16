@@ -60,6 +60,63 @@ function Debug:DumpAPI()
 	end
 end
 
+-- Candidate fields/methods for whatever tab system AuctionHouseFrame uses
+-- here - not assumed, since we've guessed this client's frame structure
+-- wrong twice already. Checked before writing any tab-injection code.
+local TAB_CANDIDATE_FIELDS = {
+	"Tabs", "TabButtons", "NumTabs", "SelectedTab", "DisplayMode",
+	"BrowseResultsFrame", "ItemBuyFrame", "CommoditiesBuyFrame", "AuctionsFrame",
+	"CategoriesList", "TabSystem",
+}
+local TAB_CANDIDATE_METHODS = {
+	"AddNamedTab", "AddTab", "SetTab", "SetDisplayMode", "GetDisplayMode",
+}
+local TAB_CANDIDATE_GLOBAL_FUNCS = {
+	"PanelTemplates_SetNumTabs", "PanelTemplates_Tab_OnClick", "PanelTemplates_SetTab",
+}
+
+function Debug:DumpTabInfo()
+	local f = AuctionHouseFrame
+	if not f then
+		self:Log("AuctionHouseFrame is nil, can't inspect tab structure")
+		return
+	end
+	for _, name in ipairs(TAB_CANDIDATE_FIELDS) do
+		local v = f[name]
+		local extra = ""
+		if type(v) == "table" then
+			local ok, n = pcall(function()
+				local count = 0
+				for _ in pairs(v) do
+					count = count + 1
+				end
+				return count
+			end)
+			extra = ok and (" (table, %d entries)"):format(n) or " (table)"
+		end
+		self:Log("AuctionHouseFrame.%s = %s%s", name, type(v), extra)
+	end
+	for _, name in ipairs(TAB_CANDIDATE_METHODS) do
+		self:Log("AuctionHouseFrame.%s (method) = %s", name, type(f[name]))
+	end
+	for _, name in ipairs(TAB_CANDIDATE_GLOBAL_FUNCS) do
+		self:Log("global %s = %s", name, type(_G[name]))
+	end
+	if f.GetName then
+		local ok, frameName = pcall(f.GetName, f)
+		self:Log("AuctionHouseFrame:GetName() = %s", ok and tostring(frameName) or "<error>")
+	end
+end
+
+function Debug:DumpFilterEnum()
+	self:Log("Enum.AuctionHouseFilter = %s", type(Enum) == "table" and type(Enum.AuctionHouseFilter) or "no Enum table")
+	if type(Enum) == "table" and type(Enum.AuctionHouseFilter) == "table" then
+		for key, value in pairs(Enum.AuctionHouseFilter) do
+			self:Log("Enum.AuctionHouseFilter.%s = %s", tostring(key), tostring(value))
+		end
+	end
+end
+
 local exportFrame
 
 function Debug:ShowExport()
