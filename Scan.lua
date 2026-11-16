@@ -272,13 +272,23 @@ function Scan:ScoreCandidate(itemId, itemLink, buyoutPrice, itemEquipLoc, itemKe
 		return -- not an equippable gear slot we track (e.g. tabard, shirt, consumable)
 	end
 
-	-- IsEquippableItem accounts for class/level/armor-proficiency restrictions
+	-- IsEquippableItem accounts for class/armor-proficiency restrictions
 	-- (plate/mail/leather/cloth) the way the client itself enforces them, so a
 	-- shaman never gets shown plate, a rogue never gets shown a 2h mace it
 	-- can't use, etc. Only skip on a definite false - leave it in on nil/error
 	-- rather than risk hiding valid upgrades over an API quirk.
 	local ok, equippable = pcall(IsEquippableItem, itemLink)
 	if ok and equippable == false then
+		self.counts.skippedNotEquippable = self.counts.skippedNotEquippable + 1
+		return
+	end
+
+	-- IsEquippableItem isn't confirmed to also account for the item's minimum
+	-- level requirement, so that's checked explicitly here too, rather than
+	-- assumed - an item you're not high enough level to wear yet shouldn't
+	-- show as a buyable upgrade.
+	local _, _, _, _, itemMinLevel = GetItemInfo(itemId)
+	if itemMinLevel and itemMinLevel > 0 and UnitLevel("player") < itemMinLevel then
 		self.counts.skippedNotEquippable = self.counts.skippedNotEquippable + 1
 		return
 	end
