@@ -6,18 +6,14 @@ local Scan = AHU.Scan
 local MAX_RESCORE_ATTEMPTS = 3
 local FINISH_AFTER_QUIET_SECONDS = 4
 
+-- Scope test (2H axes/maces only) confirmed the pipeline works end-to-end -
+-- the query completes (HasFullBrowseResults=true) and correctly found zero
+-- matches for that narrow a category. Back to scanning every slot/category.
 -- Per Blizzard's documented AuctionHouseBrowseQuery structure
--- (warcraft.wiki.gg/wiki/API:C_AuctionHouse.SendBrowseQuery): each
--- AuctionHouseItemClassFilter entry takes a single subClassID, not an array -
--- our earlier subClassFilters={1,5} field didn't match that shape and was
--- silently ignored, which is why the "2H axes/maces only" scope wasn't
--- actually narrowing anything. Two entries, one per subclass, is correct.
--- classID 2 = Weapon; subclass 1 = Two-Handed Axes, 5 = Two-Handed Maces.
--- To go back to scanning everything, set this to {} (empty table).
-local ITEM_CLASS_FILTERS = {
-	{ classID = 2, subClassID = 1 },
-	{ classID = 2, subClassID = 5 },
-}
+-- (warcraft.wiki.gg/wiki/API:C_AuctionHouse.SendBrowseQuery), each
+-- AuctionHouseItemClassFilter entry takes a single subClassID, not an array,
+-- if this ever needs narrowing again: {{classID = 2, subClassID = 1}, ...}.
+local ITEM_CLASS_FILTERS = {}
 
 -- filters "requires at least one filter in order to show something" per the
 -- same docs - an empty table (what we had) was likely why results looked
@@ -389,9 +385,13 @@ function Scan:Finish()
 		pcall(timer.Cancel, timer)
 	end
 
-	eventFrame:UnregisterEvent("AUCTION_ITEMS_UPDATE")
-	eventFrame:UnregisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
-	eventFrame:UnregisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+	-- This client throws on unregistering an event that was never registered
+	-- (unlike standard clients, where it's a silent no-op), and only one of
+	-- the legacy/modern event sets was ever registered depending on mode -
+	-- pcall each one rather than track exactly which were registered.
+	pcall(eventFrame.UnregisterEvent, eventFrame, "AUCTION_ITEMS_UPDATE")
+	pcall(eventFrame.UnregisterEvent, eventFrame, "AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
+	pcall(eventFrame.UnregisterEvent, eventFrame, "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
 	AHU.Debug:Log(
 		"Scan finished: considered=%d pending=%d scored=%d skippedNoSlot=%d skippedNotEquippable=%d results=%d",
 		self.counts.considered, self.counts.pending, self.counts.scored, self.counts.skippedNoSlot,
