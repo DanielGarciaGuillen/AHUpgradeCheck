@@ -6,15 +6,45 @@ local Scan = AHU.Scan
 local MAX_RESCORE_ATTEMPTS = 3
 local FINISH_AFTER_QUIET_SECONDS = 4
 
--- TEMPORARY test-scope narrowing: only two-handed axes and maces (what a
--- Shaman can actually wield two-handed), to nail one specific use case while
--- debugging rather than scanning the whole AH. itemClassFilters shape is
--- Blizzard's own AuctionHouseBrowseQuery structure: {classID, subClassFilters}.
+-- Per Blizzard's documented AuctionHouseBrowseQuery structure
+-- (warcraft.wiki.gg/wiki/API:C_AuctionHouse.SendBrowseQuery): each
+-- AuctionHouseItemClassFilter entry takes a single subClassID, not an array -
+-- our earlier subClassFilters={1,5} field didn't match that shape and was
+-- silently ignored, which is why the "2H axes/maces only" scope wasn't
+-- actually narrowing anything. Two entries, one per subclass, is correct.
 -- classID 2 = Weapon; subclass 1 = Two-Handed Axes, 5 = Two-Handed Maces.
 -- To go back to scanning everything, set this to {} (empty table).
 local ITEM_CLASS_FILTERS = {
-	{ classID = 2, subClassFilters = { 1, 5 } },
+	{ classID = 2, subClassID = 1 },
+	{ classID = 2, subClassID = 5 },
 }
+
+-- filters "requires at least one filter in order to show something" per the
+-- same docs - an empty table (what we had) was likely why results looked
+-- unfiltered junk. UsableOnly is Enum.AuctionHouseFilter.UsableOnly (=2 on
+-- this client, confirmed via /ahup debug), which also doubles up nicely with
+-- our own IsEquippableItem/level checks.
+local function BrowseFilters()
+	local filters = {}
+	if Enum.AuctionHouseFilter and Enum.AuctionHouseFilter.UsableOnly then
+		table.insert(filters, Enum.AuctionHouseFilter.UsableOnly)
+	end
+	return filters
+end
+
+-- sorts "appears to require at least a certain combination (e.g. price and
+-- name)" per the docs - empty (what we had) may be part of why only one
+-- batch of results ever arrived. Sort by Price then Name. Computed lazily
+-- (not at file load) since Enum tables aren't guaranteed to be populated
+-- yet this early on every client fork.
+local function BrowseSorts()
+	local priceOrder = (Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price) or 0
+	local nameOrder = (Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Name) or 1
+	return {
+		{ sortOrder = priceOrder, reverseSort = false },
+		{ sortOrder = nameOrder, reverseSort = false },
+	}
+end
 
 local eventFrame = CreateFrame("Frame")
 Scan.eventFrame = eventFrame
@@ -129,7 +159,13 @@ function Scan:StartModern()
 	eventFrame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 
 	AHU.UI:SetStatus("Scanning (browse query sent)...")
-	local query = { searchString = "", sorts = {}, filters = {}, itemClassFilters = ITEM_CLASS_FILTERS }
+	local query = {
+		searchString = "",
+		sorts = BrowseSorts(),
+		filters = BrowseFilters(),
+		itemClassFilters = ITEM_CLASS_FILTERS,
+	}
+	AHU.Debug:Log("Browse query: filters=%d sorts=%d itemClassFilters=%d", #query.filters, #query.sorts, #query.itemClassFilters)
 	local ok, err = pcall(C_AuctionHouse.SendBrowseQuery, query)
 	AHU.Debug:Log("C_AuctionHouse.SendBrowseQuery issued: ok=%s err=%s", tostring(ok), tostring(err))
 	if not ok then
@@ -160,7 +196,7 @@ end
 -- earlier, more precise finish signal when it's available and accurate.
 function Scan:ResetFinishTimer()
 	if self.finishTimer then
-		self.finishTimer:Cancel()
+		pcall(self.finishTimer.Cancel, self.finishTimer)
 	end
 	self.finishTimer = C_Timer.NewTimer(FINISH_AFTER_QUIET_SECONDS, function()
 		if self.active then
@@ -340,10 +376,19 @@ end
 
 function Scan:Finish()
 	self.active = false
-	if self.finishTimer then
-		self.finishTimer:Cancel()
-		self.finishTimer = nil
+
+	-- Cancel() can be called from inside the very timer callback that's
+	-- finishing right now (the quiet-period timer firing IS what calls
+	-- Finish()) - clearing the reference first, then pcall-guarding the
+	-- cancel, avoids a same-timer-cancels-itself error silently killing the
+	-- rest of this function (which is exactly why "Scan finished" never
+	-- used to get logged).
+	local timer = self.finishTimer
+	self.finishTimer = nil
+	if timer then
+		pcall(timer.Cancel, timer)
 	end
+
 	eventFrame:UnregisterEvent("AUCTION_ITEMS_UPDATE")
 	eventFrame:UnregisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_ADDED")
 	eventFrame:UnregisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
@@ -355,8 +400,50 @@ function Scan:Finish()
 	AHU.UI:SetStatus(("Scan complete - %d candidate upgrade(s) found."):format(#self.results))
 end
 
--- Re-runs a targeted search for this item so it shows up in the Auction
--- House's own results, where you confirm the actual bid/buyout yourself.
+local function FormatMoneyForChat(copper)
+	if not copper then
+		return "?"
+	end
+	if GetCoinTextureString then
+		return GetCoinTextureString(copper)
+	end
+	return tostring(copper)
+end
+
+-- Switching the Blizzard AH UI itself into an item-search display is
+-- undocumented internal state, so rather than guess at it (again), this
+-- listens for the documented ITEM_SEARCH_RESULTS_UPDATED event and reports
+-- the actual individual auctions straight to chat - the player still does
+-- the real Bid/Buyout themselves, manually, in the AH UI.
+local goEventFrame = CreateFrame("Frame")
+goEventFrame:SetScript("OnEvent", function(_, event, itemKey)
+	local ok, err = pcall(function()
+		if event ~= "ITEM_SEARCH_RESULTS_UPDATED" or not Scan.pendingGoItemKey then
+			return
+		end
+		if itemKey.itemID ~= Scan.pendingGoItemKey.itemID then
+			return -- some other search's results, not ours
+		end
+		Scan.pendingGoItemKey = nil
+
+		local numResults = C_AuctionHouse.GetNumItemSearchResults(itemKey) or 0
+		AHU.Debug:Log("ITEM_SEARCH_RESULTS_UPDATED: %d auction(s) found", numResults)
+		if numResults == 0 then
+			AHU.Print("No live auctions found for that item right now (it may have sold already).")
+			return
+		end
+		for i = 1, math.min(numResults, 5) do
+			local result = C_AuctionHouse.GetItemSearchResultInfo(itemKey, i)
+			if result then
+				AHU.Print(("  Buyout %s, qty %s"):format(FormatMoneyForChat(result.buyoutAmount), tostring(result.quantity)))
+			end
+		end
+	end)
+	if not ok then
+		AHU.Debug:Log("ERROR in Go search result handler: %s", tostring(err))
+	end
+end)
+
 function Scan:GoToAuction(entry)
 	local itemName = GetItemInfo(entry.itemId)
 	AHU.Debug:Log("GoToAuction clicked: item=%s mode=%s auctionHouseOpen=%s", tostring(itemName or entry.itemLink), tostring(self.mode), tostring(AHU.auctionHouseOpen))
@@ -366,15 +453,22 @@ function Scan:GoToAuction(entry)
 		return
 	end
 
-	local ok, err
 	if self.mode == "modern" and entry.itemKey then
-		ok, err = pcall(C_AuctionHouse.SendSearchQuery, entry.itemKey, {}, false)
-	else
-		ok, err = pcall(QueryAuctionItems, itemName or "", nil, nil, nil, nil, nil, 0, false, nil)
+		goEventFrame:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
+		self.pendingGoItemKey = entry.itemKey
+		local ok, err = pcall(C_AuctionHouse.SendSearchQuery, entry.itemKey, BrowseSorts(), false)
+		if not ok then
+			AHU.Debug:Log("GoToAuction SendSearchQuery failed: %s", tostring(err))
+			AHU.Print("Couldn't search for it: " .. tostring(err))
+			return
+		end
+		AHU.Print(('Looking up live auctions for "%s"...'):format(itemName or "item"))
+		return
 	end
 
+	local ok, err = pcall(QueryAuctionItems, itemName or "", nil, nil, nil, nil, nil, 0, false, nil)
 	if not ok then
-		AHU.Debug:Log("GoToAuction search failed: %s", tostring(err))
+		AHU.Debug:Log("GoToAuction QueryAuctionItems failed: %s", tostring(err))
 		AHU.Print("Couldn't search for it: " .. tostring(err))
 		return
 	end
